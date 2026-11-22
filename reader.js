@@ -975,12 +975,14 @@
     if (!book.chapters || !book.chapters.length) { toast('This book has no text to read.'); return; }
     let pg = [];
     if (book.view === 'pages') { // a book read as its real pages: where the words sit on each one
+      // kept on the device as the file's own text: storing and reading back one long string is quick, while a 400-page
+      // book stored as objects held the page still for a moment each time it was opened
       let kept = await DB.get('books', id + '/pages');
       if (!kept || kept.made !== book.made) {
-        try { kept = { made: book.made, pages: JSON.parse((await download(ROOT + '/library/' + id + '/pages.json')).text).pages }; await DB.put('books', id + '/pages', kept); }
+        try { kept = { made: book.made, text: (await download(ROOT + '/library/' + id + '/pages.json')).text }; await DB.put('books', id + '/pages', kept); }
         catch (e) { toast(e.offline ? 'This book has not reached the iPad yet. It needs a connection once.' : 'This book could not be opened.', null, null, 3600); return; }
       }
-      pg = kept.pages || [];
+      try { pg = kept.pages || JSON.parse(kept.text).pages || []; } catch (e) { pg = []; }
     }
     R.book = book; R.pm = book.view === 'pages'; R.pg = pg; PM.reset(); R.idx = {}; R.sel = null;
     bookEl.classList.toggle('pm', R.pm); pv.hidden = !R.pm; $('#flowA').hidden = $('#flowB').hidden = R.pm;
