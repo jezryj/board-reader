@@ -188,3 +188,9 @@ body[data-theme="night"] #toastAct { color: var(--accent); }
 
 /* inside BOARD on the Mac: the back button puts the book down */
 html.embed #shelf { display: none; }
+/* tags: BOARD's coloured hexagons, offered in a sheet */
+.tagchips { display: flex; flex-wrap: wrap; gap: 8px; }
+.tagchip { display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 14px 0 10px; border-radius: 20px; background: var(--paper-2); font-size: 14.5px; font-weight: 600; color: var(--ink-2); }
+.tagchip svg { width: 18px; height: 20px; } .tagchip svg path { fill: var(--k); stroke: var(--panel); stroke-width: 2; stroke-linejoin: round; }
+.tagchip.on { background: color-mix(in srgb, var(--k) 22%, var(--panel)); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--k); }
+.tagchip:active { transform: scale(.97); }

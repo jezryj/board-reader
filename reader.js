@@ -15,7 +15,7 @@
   // ------------------------------------------------------------------ settings
   const APP_KEY = '44iohoedl3b6t4h'; // the same Dropbox app as BOARD for iPhone and BOARD Capture
   const ROOT = '/BOARD';
-  const VERSION = 'reader-0.2';
+  const VERSION = 'reader-0.3';
   const REDIRECT_READY = false; // true once this page's address is on the Dropbox app's list of allowed return addresses; until then, sign in with a code
   const COL_W = 320;            // a chapter column on the book's notebook
   const HOLD = 260;             // press this long (ms) without moving and the drag highlights instead of turning the page
@@ -147,8 +147,9 @@
   // One item: { id, kind: 'hl' | 'note' | 'voice', ch, a: [paragraph, character], b (highlights only), color, text, ref, dur, pending }
   function itemOf(c, bookId) {
     if (!c || typeof c !== 'object') return null;
-    if (c.hl && c.hl.book === bookId && Array.isArray(c.hl.a) && Array.isArray(c.hl.b)) return { id: c.id, kind: 'hl', ch: c.hl.ch | 0, a: c.hl.a, b: c.hl.b, color: COLORS.includes(c.hl.color) ? c.hl.color : 'yellow', text: plain(c.html) };
-    if (c.thought && c.at && c.at.book === bookId && Array.isArray(c.at.a)) return { id: c.id, kind: c.audio ? 'voice' : 'note', ch: c.at.ch | 0, a: c.at.a, ref: c.ref || '', text: c.audio ? ((c.transcript && c.transcript.text) || '') : plain(c.html), dur: c.dur || 0 };
+    const tags = Array.isArray(c.tags) ? c.tags.filter((t) => typeof t === 'string') : [];
+    if (c.hl && c.hl.book === bookId && Array.isArray(c.hl.a) && Array.isArray(c.hl.b)) return { id: c.id, kind: 'hl', ch: c.hl.ch | 0, a: c.hl.a, b: c.hl.b, color: COLORS.includes(c.hl.color) ? c.hl.color : 'yellow', text: plain(c.html), tags };
+    if (c.thought && c.at && c.at.book === bookId && Array.isArray(c.at.a)) return { id: c.id, kind: c.audio ? 'voice' : 'note', ch: c.at.ch | 0, a: c.at.a, ref: c.ref || '', text: c.audio ? ((c.transcript && c.transcript.text) || '') : plain(c.html), dur: c.dur || 0, tags };
     return null;
   }
   const itemsOfBoard = (b, bookId) => Object.values((b && b.cards) || {}).map((c) => itemOf(c, bookId)).filter(Boolean);
@@ -157,7 +158,7 @@
     for (const op of ops) {
       if (op.kind === 'add') { const it = itemOf(op.card, op.book); if (it && !out.has(it.id)) out.set(it.id, Object.assign(it, { pending: true })); }
       else if (op.kind === 'del') out.delete(op.cardId);
-      else if (op.kind === 'set' && out.has(op.cardId)) { const it = out.get(op.cardId); if (op.patch.hl) it.color = op.patch.hl.color; if (op.patch.html != null) it.text = plain(op.patch.html); }
+      else if (op.kind === 'set' && out.has(op.cardId)) { const it = out.get(op.cardId); if (op.patch.hl) it.color = op.patch.hl.color; if (op.patch.html != null) it.text = plain(op.patch.html); if (Array.isArray(op.patch.tags)) it.tags = op.patch.tags.slice(); }
     }
     return [...out.values()];
   }
@@ -221,7 +222,7 @@
         const c = JSON.parse(JSON.stringify(op.card)), at = c.hl || c.at;
         placeInColumn(b, ensureColumn(b, book, at.ch | 0, now), c, now);
       } else if (op.kind === 'del') { delete b.cards[op.cardId]; }
-      else if (op.kind === 'set') { const c = b.cards[op.cardId]; if (c) { for (const [k, v] of Object.entries(op.patch)) c[k] = k === 'hl' ? Object.assign({}, c.hl, v) : v; c.m = now; } }
+      else if (op.kind === 'set') { const c = b.cards[op.cardId]; if (c) { for (const [k, v] of Object.entries(op.patch)) { if (k === 'tags' && !(Array.isArray(v) && v.length)) delete c.tags; else c[k] = k === 'hl' ? Object.assign({}, c.hl, v) : v; } c.m = now; } }
     }
     return b;
   }
@@ -813,11 +814,51 @@
         if (v !== item.text) { item.text = v; DB.put('notes', R.book.id, R.notes); enqueue({ book: R.book.id, kind: 'set', cardId: item.id, patch: { html: v.split(/\n+/).map((t) => '<div>' + esc(t) + '</div>').join('') } }); }
       };
       body.append(ta, btn('Save', 'primary', save));
+      if (item) tagChips(item, body);
       if (item) body.append(btn('Remove', 'danger', () => { closeSheet(); removeItem(item); }));
       body.append(btn('Cancel', 'quiet', closeSheet));
       setTimeout(() => ta.focus(), 260);
     });
   }
+  // ------------------------------------------------------------------ tags: the same coloured hexagons as BOARD
+  // The set lives beside the boards (tags.json, made and named in BOARD on the Mac). Here a highlight or a thought can
+  // wear them: Tag in the little bar, then tap. The card in BOARD wears them too, so it turns up wherever that tag
+  // gathers things, and in the landing zone of any notebook that shares it.
+  let TAGS = (store.get('reader.tags') || []).filter((t) => t && !t.gone);
+  async function loadTags() {
+    try { const j = JSON.parse((await download(ROOT + '/tags.json')).text); TAGS = (Array.isArray(j.tags) ? j.tags : []).filter((t) => t && typeof t.id === 'string' && !t.gone && /^#[0-9a-f]{6}$/i.test(t.color || '')); store.set('reader.tags', TAGS); }
+    catch (e) { /* offline or none yet: keep what we had */ }
+  }
+  const HUES = { '#e5484d': 'Red', '#f76b15': 'Orange', '#f5b400': 'Yellow', '#30a46c': 'Green', '#12a594': 'Teal', '#3b82f6': 'Blue', '#8e4ec6': 'Purple', '#d6409f': 'Pink' };
+  const tagLabel = (t) => t.name || HUES[String(t.color).toLowerCase()] || 'Tag';
+  function tagChips(item, into) {
+    const row = h('div', 'tagchips');
+    if (!TAGS.length) { into.append(h('div', 'snote small', 'Your tags are made in BOARD on the Mac (press # there). Once BOARD has opened there, they show up here.')); return; }
+    for (const t of TAGS) {
+      const b = h('button', 'tagchip' + ((item.tags || []).includes(t.id) ? ' on' : '')); b.type = 'button'; b.style.setProperty('--k', t.color);
+      b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5 21.5 7v10L12 22.5 2.5 17V7z"/></svg>'; b.append(h('span', '', tagLabel(t)));
+      b.addEventListener('click', () => {
+        const on = !(item.tags || []).includes(t.id);
+        item.tags = (item.tags || []).filter((x) => x !== t.id); if (on) item.tags.push(t.id);
+        b.classList.toggle('on', on); DB.put('notes', R.book.id, R.notes);
+        enqueue({ book: R.book.id, kind: 'set', cardId: item.id, patch: { tags: item.tags.slice() } });
+      });
+      row.append(b);
+    }
+    into.append(row);
+  }
+  async function openTags(item) {
+    if (!item) return; hidePop();
+    if (!TAGS.length) await loadTags(); else loadTags(); // the first time, wait for the set; after that, show what we have and freshen it
+    openSheet((body) => {
+      body.append(h('div', 'stitle', 'Tag it'));
+      if (item.text) body.append(h('div', 'quote', item.text));
+      tagChips(item, body);
+      body.append(btn('Done', 'primary', closeSheet));
+    });
+  }
+  $('#popTag').addEventListener('click', () => openTags(R.notes.find((n) => n.id === R.pin)));
+
   // the button: a tap types, a hold talks
   const tb = $('#thoughtBtn'), recPill = $('#recPill'); let hold = null;
   const rec = { wanted: false, stream: null, mr: null, chunks: [], t0: 0, tick: 0, where: null, type: '' };
@@ -951,7 +992,7 @@
     const pos = place || store.get('reader.pos.' + id);
     show(pos ? pos.ch | 0 : 0, pos && pos.bi != null ? { bi: pos.bi, o: pos.o | 0 } : null);
     try { history.replaceState(null, '', location.pathname + location.search + '#b=' + encodeURIComponent(id)); } catch (e) { /* fine */ }
-    syncNotes(id);
+    syncNotes(id); loadTags();
   }
   function closeBook() {
     if (EMBED) { flush().finally(() => tellBoard('close')); return; }
