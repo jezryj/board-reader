@@ -178,6 +178,10 @@
     }
     runs.sort((x, y) => y.length - x.length);
     const run = runs[0];
+    if (!run) { // the first column: beside the book itself, tops level, so the notebook reads book first, then the notes
+      const file = Object.values(cards).find((c) => c.url === book.file && !c.col);
+      if (file) { col.x = (file.x || 0) + (file.w || 260) + 24; col.y = file.y || 0; }
+    }
     if (run) {
       const head = run[0]; let after = null;
       for (const k of run) if (k.ch < ch) after = k;
