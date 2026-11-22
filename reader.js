@@ -26,6 +26,10 @@
   const mockBase = (() => { const m = /[?&]mock=([^&]+)/.exec(location.search); return m && isLocalHost ? decodeURIComponent(m[1]) : ''; })();
   // served by BOARD on the Mac itself: the BOARD folder is right there, so no Dropbox and no sign-in
   const LOCAL = isLocalHost && !mockBase && /\/reader\//.test(location.pathname);
+  // opened inside BOARD on the Mac (the book on the desk): no shelf, and closing the book hands back to BOARD
+  const EMBED = window.parent !== window && /(^|[#&])embed=1/.test(location.hash);
+  const tellBoard = (what) => { if (EMBED) try { window.parent.postMessage({ reader: what }, location.origin); } catch (e) { /* not inside BOARD */ } };
+  if (EMBED) { document.documentElement.classList.add('embed'); addEventListener('DOMContentLoaded', () => { const sp = document.querySelector('#backBtn span'); if (sp) sp.textContent = 'Done'; }); }
   const HOST = LOCAL ? { api: location.origin + '/dbx', content: location.origin + '/dbx', www: '' } : mockBase ? { api: mockBase, content: mockBase, www: mockBase } : { api: 'https://api.dropboxapi.com', content: 'https://content.dropboxapi.com', www: 'https://www.dropbox.com' };
   const REDIRECT = location.origin + location.pathname + (mockBase ? '?mock=' + encodeURIComponent(mockBase) : '');
 
@@ -255,6 +259,7 @@
           catch (e) { if (!e.conflict) throw e; } // the Mac saved it in the meantime: read it again and retry
         }
         if (!done) throw new Error('The notebook kept changing');
+        tellBoard('saved');
         for (const op of ops) { await DB.del('queue', op.id); S.queued--; }
         const rest = (await DB.all('queue')).filter((o) => o.book === bookId);
         await keepNotes(bookId, withPending(itemsOfBoard(done, bookId), rest));
@@ -949,6 +954,7 @@
     syncNotes(id);
   }
   function closeBook() {
+    if (EMBED) { flush().finally(() => tellBoard('close')); return; }
     if (!R.book) return; hidePop(); if (rec.mr) stopRec(true);
     R.book = null; R.pm = false; bookEl.hidden = true; $('#shelf').hidden = false; $('#flowA').textContent = ''; $('#flowB').textContent = ''; pv.textContent = ''; PM.reset();
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* fine */ }
@@ -1003,11 +1009,12 @@
     const hp = new URLSearchParams(location.hash.slice(1)), want = hp.get('b'); // a card in BOARD can open the book at its own place
     const place = want && hp.get('c') != null ? { ch: +hp.get('c') || 0, bi: +hp.get('i') || 0, o: +hp.get('o') || 0 } : null;
     if (want && (await DB.get('books', want))) openBook(want, place);
+    if (EMBED && R.book) { loadShelf().then(() => { /* fresh copy of this book is on the device for next time */ }); flush(); return; }
     await loadShelf();
     if (want && !R.book) openBook(want, place);
     flush();
   }
-  window.BOARDREADER = { S, R, PM, DB, flush, loadShelf, openBook, closeBook, show, turn, applyOps, ensureColumn, withPending, itemsOfBoard, syncNotes, wordAt, whereNow, addThought, version: VERSION, local: LOCAL };
+  window.BOARDREADER = { EMBED, S, R, PM, DB, flush, loadShelf, openBook, closeBook, show, turn, applyOps, ensureColumn, withPending, itemsOfBoard, syncNotes, wordAt, whereNow, addThought, version: VERSION, local: LOCAL };
   if ('serviceWorker' in navigator && !mockBase && !LOCAL && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => { /* works without it, just not offline */ });
   boot();
 })();

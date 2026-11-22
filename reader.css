@@ -185,3 +185,6 @@ body[data-theme="night"] .pgbox .ov .tm { box-shadow: 0 0 0 2px #111; }
 #toast { position: fixed; left: 50%; bottom: calc(96px + var(--sab)); transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 12px; max-width: 86vw; padding: 10px 16px; border-radius: 20px; background: var(--ink); color: var(--paper); font-size: 13.5px; font-weight: 600; box-shadow: 0 8px 24px -8px rgba(0,0,0,.5); }
 #toastAct { color: #9cc0ff; font-weight: 700; }
 body[data-theme="night"] #toastAct { color: var(--accent); }
+
+/* inside BOARD on the Mac: the back button puts the book down */
+html.embed #shelf { display: none; }
